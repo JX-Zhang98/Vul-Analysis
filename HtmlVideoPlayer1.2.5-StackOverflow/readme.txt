@@ -1,1 +1,1 @@
-»·¾³£ºwin xp service pack 3
+environment: win xp service pack 3
